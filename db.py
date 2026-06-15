@@ -21,46 +21,63 @@ class MySqlManager:
     """
 
     def __init__(self, Config: DatabaseConfig) -> None:
+        """初始化管理器，保存数据库连接配置。"""
         self.Config = Config
         self.Connection: Optional[mysql.connector.MySQLConnection] = None
 
     def Close(self) -> None:
-        """关闭数据库连接。"""
+        """关闭数据库连接，并将连接对象置为 None。"""
         if self.Connection is not None and self.Connection.is_connected():
             self.Connection.close()
         self.Connection = None
 
     def EnsureConnection(self) -> None:
-        """确保连接处于可用状态。"""
+        """确保数据库连接处于可用状态，若断开则重新连接。"""
         if self.Connection is not None and self.Connection.is_connected():
             return
-        self.Connection = mysql.connector.connect(
-            host=self.Config.Host,
-            port=self.Config.Port,
-            user=self.Config.User,
-            password=self.Config.Password,
-            database=self.Config.Database,
-            charset="utf8mb4",
-            autocommit=True,
-            connect_timeout=5,
-        )
+        try:
+            self.Connection = mysql.connector.connect(
+                host=self.Config.Host,
+                port=self.Config.Port,
+                user=self.Config.User,
+                password=self.Config.Password,
+                database=self.Config.Database,
+                charset="utf8mb4",
+                autocommit=True,
+                connect_timeout=5,
+                use_pure=True,  # 使用纯 Python 实现，避免 C 扩展崩溃 (0xC0000005)
+            ) # type: ignore
+        except mysql.connector.Error:
+            raise
+        except Exception as e:
+            raise mysql.connector.Error(
+                f"连接数据库时发生未知错误: {e}"
+            ) from e
 
     def _ConnectWithoutDatabase(self) -> mysql.connector.MySQLConnection:
         """建立不指定数据库的连接，用于创建数据库。"""
-        return mysql.connector.connect(
-            host=self.Config.Host,
-            port=self.Config.Port,
-            user=self.Config.User,
-            password=self.Config.Password,
-            charset="utf8mb4",
-            autocommit=True,
-            connect_timeout=5,
-        )
+        try:
+            return mysql.connector.connect(
+                host=self.Config.Host,
+                port=self.Config.Port,
+                user=self.Config.User,
+                password=self.Config.Password,
+                charset="utf8mb4",
+                autocommit=True,
+                connect_timeout=5,
+                use_pure=True,  # 使用纯 Python 实现，避免 C 扩展崩溃 (0xC0000005)
+            ) # type: ignore
+        except mysql.connector.Error:
+            raise
+        except Exception as e:
+            raise mysql.connector.Error(
+                f"连接数据库时发生未知错误: {e}"
+            ) from e
 
     # ---- 数据库与表结构初始化 ----
 
     def EnsureSchema(self) -> None:
-        """创建数据库与表结构，并写入默认示例数据。"""
+        """创建数据库与所有业务表结构，若为空库则写入默认示例数据。"""
         RootConnection = self._ConnectWithoutDatabase()
         RootCursor = RootConnection.cursor()
         try:
@@ -218,7 +235,7 @@ class MySqlManager:
     # ---- 通用查询方法 ----
 
     def ExecuteQuery(self, SqlText: str, Parameters: Tuple[Any, ...] = ()) -> List[Dict[str, Any]]:
-        """执行查询语句并返回字典列表。"""
+        """执行 SELECT 查询并返回字典列表（每行一个字典）。"""
         self.EnsureConnection()
         Cursor = self.Connection.cursor(dictionary=True)
         try:
@@ -228,12 +245,12 @@ class MySqlManager:
             Cursor.close()
 
     def ExecuteOne(self, SqlText: str, Parameters: Tuple[Any, ...] = ()) -> Optional[Dict[str, Any]]:
-        """执行查询语句并返回首条结果。"""
+        """执行 SELECT 查询并返回首条结果，无结果时返回 None。"""
         Rows = self.ExecuteQuery(SqlText, Parameters)
         return Rows[0] if Rows else None
 
     def ExecuteNonQuery(self, SqlText: str, Parameters: Tuple[Any, ...] = ()) -> int:
-        """执行增删改语句并返回影响行数。"""
+        """执行 INSERT/UPDATE/DELETE 语句并返回受影响行数。"""
         self.EnsureConnection()
         Cursor = self.Connection.cursor()
         try:
@@ -245,13 +262,13 @@ class MySqlManager:
     # ---- 部门管理 ----
 
     def GetDepartments(self) -> List[Dict[str, Any]]:
-        """查询全部部门。"""
+        """查询全部部门列表，按编号升序排列。"""
         return self.ExecuteQuery(
             "SELECT department_id, department_name, description FROM departments ORDER BY department_id ASC"
         )
 
     def UpsertDepartment(self, DepartmentId: Optional[int], DepartmentName: str, Description: str) -> None:
-        """新增或修改部门。"""
+        """新增或修改部门。DepartmentId 为 None 时新增，否则更新。"""
         if DepartmentId is None:
             self.ExecuteNonQuery(
                 """
@@ -271,7 +288,7 @@ class MySqlManager:
         )
 
     def DeleteDepartment(self, DepartmentId: int) -> None:
-        """删除部门。若部门下存在成员，成员的部门会自动置空。"""
+        """按 ID 删除部门。若部门下有成员，成员的 department_id 会自动置空（ON DELETE SET NULL）。"""
         self.ExecuteNonQuery("DELETE FROM departments WHERE department_id = %s", (DepartmentId,))
 
     # ---- 成员管理 ----
@@ -282,7 +299,7 @@ class MySqlManager:
         DepartmentId: Optional[int] = None,
         MemberId: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """查询成员档案。"""
+        """查询成员档案。支持按关键字（编号/姓名）、部门和成员编号过滤。"""
         SqlText = """
             SELECT m.member_id, m.name, m.gender, m.age, m.identity, m.position,
                    m.join_method, m.contact, m.department_id, m.note,
@@ -318,7 +335,7 @@ class MySqlManager:
         EndDate: str = "",
         Status: str = "",
     ) -> List[Dict[str, Any]]:
-        """查询考勤记录。"""
+        """查询考勤记录。支持按成员编号、日期范围、状态过滤。"""
         SqlText = """
             SELECT a.attendance_id, a.member_id, a.attendance_date, a.status,
                    a.check_in_time, a.check_out_time, a.remark,
@@ -383,7 +400,7 @@ class MySqlManager:
     # ---- 用户账户管理 ----
 
     def GetUsers(self) -> List[Dict[str, Any]]:
-        """查询全部用户账户（关联成员姓名）。"""
+        """查询全部用户账户（关联成员姓名），按编号升序排列。"""
         return self.ExecuteQuery(
             """
             SELECT u.user_id, u.username, u.role, u.member_id, u.is_active,
@@ -416,7 +433,7 @@ class MySqlManager:
         MemberId: Optional[str] = None,
         IsActive: bool = True,
     ) -> None:
-        """新增或修改用户账户。"""
+        """新增或修改用户账户。UserId 为 None 时新增，否则更新密码以外的字段。"""
         if UserId is None:
             self.ExecuteNonQuery(
                 """
@@ -440,7 +457,7 @@ class MySqlManager:
         self.ExecuteNonQuery("DELETE FROM user_accounts WHERE user_id = %s", (UserId,))
 
     def AdminResetPassword(self, UserId: int, NewPassword: str) -> None:
-        """管理员直接重置用户密码（无需旧密码验证）。"""
+        """管理员直接重置用户密码（无需旧密码验证）。密码存储为 SHA-256 哈希。"""
         self.ExecuteNonQuery(
             "UPDATE user_accounts SET password_hash = %s WHERE user_id = %s",
             (HashPassword(NewPassword), UserId),

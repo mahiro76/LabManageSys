@@ -1,5 +1,8 @@
-"""
-打包前环境检查脚本
+"""打包前环境检查脚本。
+
+检查 Python 版本、依赖包、MySQL 服务状态、项目文件完整性等，
+确保满足打包条件后提示用户执行构建。
+
 使用方法：python check_before_build.py
 """
 
@@ -44,7 +47,7 @@ def check_package_installed(package_name, display_name=None):
 
 
 def check_required_packages():
-    """检查必需的依赖包"""
+    """检查必需的依赖包（mysql-connector, openpyxl, matplotlib, pyinstaller）是否已安装。"""
     print_section("2. 依赖包检查")
     
     packages = [
@@ -63,7 +66,7 @@ def check_required_packages():
 
 
 def check_mysql_service():
-    """检查 MySQL 服务状态"""
+    """检查 MySQL 服务是否正在运行（仅提示，打包时无需 MySQL 运行）。"""
     print_section("3. MySQL 服务检查")
     
     try:
@@ -86,7 +89,7 @@ def check_mysql_service():
 
 
 def check_project_files():
-    """检查项目文件完整性"""
+    """检查项目关键文件（main.py、ui.py、db.py 等）是否存在。"""
     print_section("4. 项目文件检查")
     
     import os
@@ -114,7 +117,7 @@ def check_project_files():
 
 
 def check_clean_environment():
-    """检查是否有旧的打包文件"""
+    """检查是否存在旧的 build/dist 目录，并可选择自动清理。"""
     print_section("5. 环境清理检查")
     
     import os
@@ -145,7 +148,7 @@ def check_clean_environment():
 
 
 def run_tests():
-    """运行基本功能测试"""
+    """运行基本功能测试：验证模块导入和数据库配置是否正确。"""
     print_section("6. 基本功能测试")
     
     try:
@@ -171,7 +174,7 @@ def run_tests():
 
 
 def main():
-    """主函数"""
+    """主函数：依次执行所有检查项并汇总结果。"""
     print("\n" + "=" * 60)
     print("  实验室考勤管理系统 - 打包前环境检查")
     print("=" * 60)

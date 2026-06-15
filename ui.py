@@ -165,6 +165,7 @@ class LoginDialog(tk.Toplevel):
     """模态登录对话框。"""
 
     def __init__(self, Parent: tk.Tk, Db: MySqlManager) -> None:
+        """初始化登录对话框，设置界面布局并显示。"""
         super().__init__(Parent)
         self._Db = Db
         self.Result: Optional[LoginUser] = None
@@ -201,6 +202,7 @@ class LoginDialog(tk.Toplevel):
         self.wait_window()
 
     def _DoLogin(self) -> None:
+        """执行登录验证：读取用户名/密码，调用数据库验证，成功后保存用户信息。"""
         Username = self._UsernameVar.get().strip()
         Password = self._PasswordVar.get().strip()
         if not Username or not Password:
@@ -237,6 +239,7 @@ class BasePage(ttk.Frame):
     """所有 Tab 页面的基类，提供统一的刷新接口。"""
 
     def __init__(self, Parent: ttk.Notebook, Db: MySqlManager, User: LoginUser) -> None:
+        """初始化基础页面，保存数据库管理器引用和当前用户信息。"""
         super().__init__(Parent)
         self._Db = Db
         self._User = User
@@ -248,7 +251,7 @@ class BasePage(ttk.Frame):
 
 def _BuildTreeview(Parent: tk.Widget, Columns: List[str], Headings: List[str],
                    Widths: Optional[List[int]] = None) -> Tuple[ttk.Treeview, ttk.Scrollbar]:
-    """创建带滚动条的 Treeview 控件。"""
+    """创建带垂直滚动条的 Treeview 表格控件并返回 (Treeview, Scrollbar)。"""
     Frame = ttk.Frame(Parent)
     Frame.pack(fill=tk.BOTH, expand=True)
 
@@ -320,6 +323,7 @@ class DepartmentPage(BasePage):
     WIDTHS = [60, 200, 300]
 
     def __init__(self, Parent: ttk.Notebook, Db: MySqlManager, User: LoginUser) -> None:
+        """初始化部门管理页，创建工具栏和表格。"""
         super().__init__(Parent, Db, User)
         Bar = _Toolbar(self)
         ttk.Button(Bar, text="新增", command=self._OnAdd).pack(side=tk.LEFT, padx=2)
@@ -376,6 +380,7 @@ class DepartmentPage(BasePage):
         return Result[0]
 
     def _OnAdd(self) -> None:
+        """新增部门：弹出编辑对话框，保存后刷新列表。"""
         Values = self._GetFormValues("新增部门")
         if Values is None:
             return
@@ -387,6 +392,7 @@ class DepartmentPage(BasePage):
             messagebox.showerror("错误", f"新增失败：{e}")
 
     def _OnEdit(self) -> None:
+        """修改部门：获取选中行，弹出编辑对话框预填数据，保存后刷新。"""
         Row = _GetSelectedRow(self._Tree)
         if Row is None:
             messagebox.showinfo("提示", "请先选择一条记录")
@@ -403,6 +409,7 @@ class DepartmentPage(BasePage):
             messagebox.showerror("错误", f"修改失败：{e}")
 
     def _OnDelete(self) -> None:
+        """删除部门：确认后执行删除，若存在外键约束则提示。"""
         Row = _GetSelectedRow(self._Tree)
         if Row is None:
             messagebox.showinfo("提示", "请先选择一条记录")
@@ -435,6 +442,7 @@ class MemberPage(BasePage):
     WIDTHS = [80, 80, 50, 50, 80, 100, 80, 120, 120, 150]
 
     def __init__(self, Parent: ttk.Notebook, Db: MySqlManager, User: LoginUser) -> None:
+        """初始化成员管理页，创建搜索栏、工具栏和表格。"""
         super().__init__(Parent, Db, User)
 
         # 搜索栏
@@ -461,6 +469,7 @@ class MemberPage(BasePage):
         self.Refresh()
 
     def Refresh(self) -> None:
+        """刷新成员列表，按关键字搜索。"""
         Keyword = self._KeywordVar.get().strip()
         try:
             Rows = self._Db.GetMembers(Keyword=Keyword)
@@ -469,9 +478,11 @@ class MemberPage(BasePage):
         _FillTreeview(self._Tree, Rows, self.COLUMNS)
 
     def _OnAdd(self) -> None:
+        """新增成员：打开空白编辑表单。"""
         self._OpenForm("新增成员")
 
     def _OnEdit(self) -> None:
+        """修改成员：获取选中行，打开预填数据的编辑表单。"""
         Row = _GetSelectedRow(self._Tree)
         if Row is None:
             messagebox.showinfo("提示", "请先选择一条记录")
@@ -567,6 +578,7 @@ class MemberPage(BasePage):
                 messagebox.showerror("错误", f"保存失败：{e}")
 
     def _OnDelete(self) -> None:
+        """删除成员：确认后执行删除，若存在考勤记录则阻止。"""
         Row = _GetSelectedRow(self._Tree)
         if Row is None:
             messagebox.showinfo("提示", "请先选择一条记录")
@@ -585,7 +597,7 @@ class MemberPage(BasePage):
                 messagebox.showerror("错误", f"删除失败：{e}")
 
     def _OnImport(self) -> None:
-        """从 Excel 文件批量导入成员（已废弃，保留用于兼容）。"""
+        """从 Excel 文件批量导入成员（兼容旧版调用）。"""
         self._OnImportExcel()
 
     def _OnImportExcel(self) -> None:
@@ -757,6 +769,7 @@ class AttendancePage(BasePage):
     WIDTHS = [60, 80, 80, 100, 100, 70, 90, 90, 150]
 
     def __init__(self, Parent: ttk.Notebook, Db: MySqlManager, User: LoginUser) -> None:
+        """初始化考勤管理页，创建过滤栏、工具栏和表格。学生角色仅可查看本人记录。"""
         super().__init__(Parent, Db, User)
 
         # 过滤栏
@@ -833,6 +846,7 @@ class AttendancePage(BasePage):
         self.Refresh()
 
     def Refresh(self) -> None:
+        """刷新考勤列表：根据过滤条件查询并显示。校验结束日期不得早于开始日期。"""
         # 组装开始/结束日期
         StartDate = self._BuildDateStr(self._StartYearVar, self._StartMonthVar, self._StartDayVar)
         EndDate = self._BuildDateStr(self._EndYearVar, self._EndMonthVar, self._EndDayVar)
@@ -885,6 +899,7 @@ class AttendancePage(BasePage):
         self.Refresh()
 
     def _OpenForm(self, Title: str, Row: Optional[Dict[str, str]] = None) -> None:
+        """打开考勤编辑表单，包含成员编号、日期、状态、签到/签退时间和备注字段。"""
         Dialog = tk.Toplevel(self)
         Dialog.title(Title)
         Dialog.resizable(False, False)
@@ -1131,6 +1146,7 @@ class UserPage(BasePage):
     WIDTHS = [60, 120, 80, 100, 100, 50]
 
     def __init__(self, Parent: ttk.Notebook, Db: MySqlManager, User: LoginUser) -> None:
+        """初始化用户管理页，创建工具栏和表格。"""
         super().__init__(Parent, Db, User)
         Bar = _Toolbar(self)
         ttk.Button(Bar, text="新增", command=self._OnAdd).pack(side=tk.LEFT, padx=2)
@@ -1270,6 +1286,10 @@ class UserPage(BasePage):
         if self._User.Role == ROLE_STAFF and Row.get("role") in (ROLE_ADMIN, ROLE_STAFF):
             messagebox.showwarning("权限不足", "您没有权限删除管理员或其他老师的账号")
             return
+        # Admin 不能删除其他 Admin 账号（防止误操作导致无管理员）
+        if self._User.Role == ROLE_ADMIN and Row.get("role") == ROLE_ADMIN:
+            messagebox.showwarning("权限限制", "不允许删除管理员账号，以防误操作造成系统无管理员")
+            return
         if not messagebox.askyesno("确认", f"确定删除用户「{Row.get('username', '')}」？"):
             return
         try:
@@ -1306,6 +1326,7 @@ class StatsPage(BasePage):
     """考勤统计图表。"""
 
     def __init__(self, Parent: ttk.Notebook, Db: MySqlManager, User: LoginUser) -> None:
+        """初始化统计图表页，创建模式选择工具栏和 Matplotlib 图表。"""
         super().__init__(Parent, Db, User)
 
         Bar = _Toolbar(self)
@@ -1368,6 +1389,7 @@ class Application(tk.Tk):
     """实验室考勤管理系统主应用。"""
 
     def __init__(self) -> None:
+        """初始化主应用窗口，设置标题、窗口大小，隐藏主窗口等待登录。"""
         super().__init__()
         self.title("实验室考勤管理系统")
         self.geometry("1100x700")
@@ -1391,43 +1413,66 @@ class Application(tk.Tk):
                 pass
         super().destroy()
 
+    @staticmethod
+    def _CheckTcpPort(host: str, port: int, timeout: float = 3) -> bool:
+        """快速检测 TCP 端口是否可达，避免 C 扩展直接崩溃。"""
+        import socket
+        try:
+            with socket.create_connection((host, port), timeout=timeout):
+                return True
+        except Exception:
+            return False
+
     def Run(self) -> None:
-        """启动应用。"""
+        """启动应用：确保 MySQL 运行 → 连接数据库 → 登录 → 构建主界面。"""
         # 尝试自动启动 MySQL 服务
         mysql_ok = self._EnsureMySqlRunning()
-        print(f"[启动] mysql_ok={mysql_ok}")
+        print(f"[INFO] mysql_ok={mysql_ok}")
 
         # 连接数据库，失败时弹出配置对话框让用户修改
         while True:
             try:
                 if not mysql_ok:
                     # 自动启动失败，立即弹出配置窗口（跳过连接尝试）
-                    print("[启动] MySQL 未就绪，准备弹出配置窗口...")
+                    print("[INFO] MySQL 未就绪，准备弹出配置窗口...")
                     Config = self._DbConfigDialog(
-                        "MySQL 服务无法自动启动（数据目录未初始化）。\n"
-                        "请先手动初始化 MySQL 数据目录，\n"
-                        "或修改以下数据库连接参数后重试。"
+                        "⚠ 本地 MySQL 自动启动失败\n\n"
+                        "可能原因：\n"
+                        "  1. 本机未安装 MySQL（教室环境常见）\n"
+                        "  2. MySQL 安装路径不是 D:\\mysql\n"
+                        "  3. 数据目录未初始化\n\n"
+                        "解决方案：\n"
+                        "  • 使用远程 MySQL 服务器：修改下方主机地址\n"
+                        "  • 在本机安装 MySQL 后重试\n"
+                        "  • 保持默认配置，手动启动 MySQL 后重试"
                     )
                 else:
                     self._InitDatabase()
                     break  # 连接成功
             except Exception as e:
-                print(f"[启动] 数据库初始失败: {e}")
+                print(f"[INFO] 数据库初始失败: {e}")
+                error_msg = str(e)[:200]
                 Config = self._DbConfigDialog(
-                    f"无法连接数据库：{e}\n请检查以下配置是否正确。"
+                    f"⚠ 无法连接数据库\n\n错误信息：{error_msg}\n\n"
+                    "请确认 MySQL 服务已启动，\n"
+                    "或修改连接参数指向可用的 MySQL 服务器。"
                 )
             if Config is None:
-                print("[启动] 用户取消配置，退出")
+                print("[INFO] 用户取消配置，退出")
                 self.destroy()  # 用户取消
                 return
             # 用用户输入的配置重试
-            print(f"[启动] 使用新配置重试: {Config.Host}:{Config.Port}")
+            print(f"[INFO] 使用新配置重试: {Config.Host}:{Config.Port}")
             self._Db = MySqlManager(Config)
             try:
+                # 先快速探测端口是否可达，避免 C 扩展因连接不上而崩溃
+                if not self._CheckTcpPort(Config.Host, Config.Port, timeout=3):
+                    print(f"[WARN] 端口 {Config.Host}:{Config.Port} 不可达，MySQL 可能未运行")
+                    raise ConnectionError(f"无法连接到 {Config.Host}:{Config.Port}，MySQL 服务可能未启动")
                 self._Db.EnsureSchema()
                 break  # 重试成功
-            except Exception:
-                print("[启动] 重试仍失败，继续弹窗")
+            except Exception as e:
+                print(f"[INFO] 重试仍失败 ({e})，继续弹窗")
                 mysql_ok = False  # 再次失败，继续弹窗
                 continue
 
@@ -1450,30 +1495,120 @@ class Application(tk.Tk):
             if self._Db is not None:
                 self._Db.Close()
 
+    def _IsLocalHost(self, host: str) -> bool:
+        """判断给定的主机地址是否为本地地址。"""
+        return host in ("localhost", "127.0.0.1", "::1", "0.0.0.0")
+
     def _EnsureMySqlRunning(self) -> bool:
         """确保 MySQL 服务正在运行。如果未运行则尝试自动启动。
         返回 True 表示 MySQL 已就绪，False 表示无法启动。"""
+        # === 先检查用户配置：如果配的是远程服务器，完全跳过本地 MySQL 管理 ===
+        try:
+            saved_config = _GetDefaultDbConfig()
+            if not self._IsLocalHost(saved_config.Host):
+                print(f"[INFO] 检测到远程 MySQL 配置 ({saved_config.Host}:{saved_config.Port})，跳过本地 MySQL 管理")
+                return True
+        except Exception:
+            pass  # 读取配置失败时，继续走本地管理逻辑
+
         if start_mysql is None:
             # mysql_service 模块不可用，跳过自动启动
             return True
 
         try:
-            from mysql_service import is_mysql_running
+            from mysql_service import is_mysql_running, load_state
+            from config import MYSQL_HOME, get_mysqld_path
+            
+            # === 预先检查：MySQL 安装目录是否存在 ===
+            mysqld_path = get_mysqld_path()
+            if not os.path.exists(mysqld_path):
+                print(f"[WARN] 未找到 MySQL 服务程序: {mysqld_path}")
+                print(f"[WARN] 请确认 MySQL 已安装在 {MYSQL_HOME} 目录下")
+                print(f"[WARN] 或使用远程 MySQL 服务器（在配置窗口中修改连接参数）")
+                return False  # 直接返回 False，弹出配置窗口让用户填远程连接
+            
+            # 如果 MySQL 已在运行，检查密码是否已设置
             if is_mysql_running():
-                return True
-            print("检测到 MySQL 未运行，正在自动启动...")
+                state = load_state()
+                if state.get("password_set"):
+                    return True
+                # MySQL 已运行但密码未设置（上次初始化失败遗留）
+                print("[WARN] MySQL 已在运行但密码未设置，正在尝试设置密码...")
+                from mysql_service import set_root_password
+                if set_root_password(force=False):
+                    print("[OK] root 密码设置成功")
+                    return True
+                # 密码设置失败（不知道临时密码），需要重启
+                print("[WARN] 无法从状态文件获取临时密码，需要重新初始化")
+                from mysql_service import stop_mysql
+                stop_mysql()
+                # 清理旧数据目录，确保后续 initialize 不会因"非空"而失败
+                from config import MYSQL_DATA
+                if os.path.exists(MYSQL_DATA):
+                    import shutil
+                    shutil.rmtree(MYSQL_DATA)
+                    print("[INFO] 已删除旧数据目录")
+                # 重置密码标志和临时密码状态
+                state["password_set"] = False
+                state["initialized"] = False
+                state["temp_password"] = None
+                from mysql_service import save_state
+                save_state(state)
+                # 继续往下走，重新初始化
+            
+            print("检测到 MySQL 未运行，正在检查状态...")
+            
+            from config import MYSQL_DATA
+            state = load_state()
+            
+            # 检查：状态文件说已初始化，但物理目录不存在或为空 → 强制重新初始化
+            data_dir_exists = os.path.exists(MYSQL_DATA) and bool(os.listdir(MYSQL_DATA))
+            if state.get("initialized") and not data_dir_exists:
+                print("[WARN] 状态文件显示已初始化，但数据目录不存在或为空，将重新初始化")
+                state["initialized"] = False  # 重置状态，触发重新初始化
+            
+            if not state.get("initialized"):
+                print("[WARN] 数据目录未初始化，正在自动初始化...")
+                try:
+                    from mysql_service import initialize_mysql
+                    init_result = initialize_mysql(force=False)
+                    if not init_result:
+                        print("[ERR] 数据目录初始化失败")
+                        return False
+                    print("[OK] 数据目录初始化成功")
+                except Exception as e:
+                    print(f"[ERR] 初始化数据目录时出错: {e}")
+                    return False
+            
+            # 再次验证物理目录（防止初始化后目录仍为空）
+            if not os.path.exists(MYSQL_DATA) or not os.listdir(MYSQL_DATA):
+                print(f"[ERR] 数据目录 {MYSQL_DATA} 仍为空，无法继续")
+                return False
+            
+            # 启动 MySQL
+            print("正在启动 MySQL...")
             success = start_mysql()
-            if success:
-                print("[INFO] MySQL 自动启动成功")
-                return True
-            print("[ERR] MySQL 自动启动失败，请手动初始化数据目录")
-            return False
+            if not success:
+                print("[ERR] MySQL 自动启动失败")
+                return False
+            print("[INFO] MySQL 自动启动成功")
+            
+            # 设置 root 密码（首次初始化后，临时密码必须改为配置的密码）
+            from mysql_service import set_root_password
+            if not load_state().get("password_set"):
+                print("[INFO] 正在设置 root 密码...")
+                if not set_root_password(force=False):
+                    print("[WARN] root 密码设置失败")
+            else:
+                print("[INFO] root 密码已设置，跳过")
+            
+            return True
         except Exception as e:
             print(f" 检查/启动 MySQL 时出错: {e}")
             return False
 
     def _InitDatabase(self) -> None:
-        """初始化数据库连接和表结构。"""
+        """使用默认配置初始化数据库连接和表结构。"""
         Config = _GetDefaultDbConfig()
         self._Db = MySqlManager(Config)
         self._Db.EnsureSchema()
@@ -1584,7 +1719,7 @@ class Application(tk.Tk):
             messagebox.showerror("错误", f"连接失败：{e}\n请重新配置。")
 
     def _BuildMainWindow(self) -> None:
-        """构建主窗口的 Tab 页面。"""
+        """根据用户角色构建主界面的 Tab 页面和菜单栏。"""
         self._Notebook = ttk.Notebook(self)
         self._Notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
@@ -1617,10 +1752,10 @@ class Application(tk.Tk):
 
         FileMenu = tk.Menu(MenuBar, tearoff=0)
         MenuBar.add_cascade(label="选项", menu=FileMenu)
-        FileMenu.add_command(label="重新登录", command=self._ReLogin)
+        FileMenu.add_command(label="注销", command=self._ReLogin)
         FileMenu.add_command(label="修改密码", command=self._ChangePassword)
         FileMenu.add_separator()
-        FileMenu.add_command(label="退出", command=self.destroy)
+        FileMenu.add_command(label="退出系统", command=self.destroy)
 
         if self._User is not None and self._User.Role == ROLE_ADMIN:
             DbMenu = tk.Menu(MenuBar, tearoff=0)
