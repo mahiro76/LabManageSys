@@ -1,86 +1,74 @@
 @echo off
-chcp 65001 >nul
-setlocal enabledelayedexpansion
-
 echo ========================================
-echo   实验室考勤管理系统 - 自动打包脚本
+echo   Lab Manage System - Build Script
 echo ========================================
 echo.
 
-:: 检查 Python 是否安装
 python --version >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [错误] 未检测到 Python，请先安装 Python 3.8+
+if errorlevel 1 (
+    echo [ERR] Python not found. Please install Python 3.8+
     pause
     exit /b 1
 )
 
-echo [1/6] 检查 Python 环境...
+echo [1/6] Checking Python environment...
 python --version
 echo.
 
-:: 清理旧文件
-echo [2/6] 清理旧的打包文件...
-if exist "build" rmdir /s /q "build"
-if exist "dist" rmdir /s /q "dist"
-if exist "*.spec.bak" del /f /q "*.spec.bak"
-echo 清理完成
+echo [2/6] Cleaning old temp files...
+if exist "build" rmdir /s /q "build" 2>nul
+
+set BUILD_DIR=dist_build
+if exist "%BUILD_DIR%" rmdir /s /q "%BUILD_DIR%" 2>nul
+echo [OK] Cleaned
 echo.
 
-:: 安装依赖
-echo [3/6] 安装/更新依赖包...
-pip install -r requirements.txt
-if %errorlevel% neq 0 (
-    echo [错误] 依赖安装失败
+echo [3/6] Installing dependencies...
+python -m pip install -r requirements.txt
+if errorlevel 1 (
+    echo [ERR] Dependency installation failed
     pause
     exit /b 1
 )
-echo 依赖安装完成
+echo [OK] Dependencies installed
 echo.
 
-:: 检查 PyInstaller
-echo [4/6] 检查 PyInstaller...
-pyinstaller --version >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [警告] PyInstaller 未安装，正在安装...
-    pip install pyinstaller
+echo [4/6] Checking PyInstaller...
+python -m PyInstaller --version >nul 2>&1
+if errorlevel 1 (
+    echo [WARN] PyInstaller not found, installing...
+    python -m pip install pyinstaller
 )
 echo.
 
-:: 开始打包
-echo [5/6] 开始打包（这可能需要1-3分钟）...
-echo 请稍候...
-pyinstaller LabManageSys.spec
-if %errorlevel% neq 0 (
-    echo [错误] 打包失败
+echo [5/6] Building executable...
+python -m PyInstaller LabManageSys.spec -y --distpath %BUILD_DIR%
+if errorlevel 1 (
+    echo [ERR] Build failed
     pause
     exit /b 1
 )
 echo.
 
-:: 检查打包结果
-echo [6/6] 检查打包结果...
-if not exist "dist\LabManageSys\LabManageSys.exe" (
-    echo [错误] 打包失败：未找到可执行文件
-    pause
-    exit /b 1
+echo [6/6] Moving build output to dist\...
+if exist "dist" rmdir /s /q "dist" 2>nul
+if exist "dist" (
+    echo [WARN] dist folder locked, leaving output at %BUILD_DIR%\
+    echo Output: %BUILD_DIR%\LabManageSys\LabManageSys.exe
+) else (
+    move /y "%BUILD_DIR%" "dist" >nul
+    echo [OK] Build output moved to dist\LabManageSys\
 )
-
 echo.
+
 echo ========================================
-echo   打包成功！
+echo   Build Successful!
 echo ========================================
 echo.
-echo 可执行文件位置：
-echo   dist\LabManageSys\LabManageSys.exe
+if exist "dist\LabManageSys\LabManageSys.exe" (
+    echo Output: dist\LabManageSys\LabManageSys.exe
+) else (
+    echo Output: %BUILD_DIR%\LabManageSys\LabManageSys.exe
+)
 echo.
-echo 文件夹大小：
-dir "dist\LabManageSys" | findstr "个文件"
-echo.
-echo 提示：
-echo   1. 将整个 "dist\LabManageSys" 文件夹压缩为 ZIP
-echo   2. 确保目标机器已安装并启动 MySQL 服务
-echo   3. 首次运行可能需要几秒钟初始化
-echo.
-
 pause

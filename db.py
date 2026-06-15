@@ -34,28 +34,44 @@ class MySqlManager:
         """确保连接处于可用状态。"""
         if self.Connection is not None and self.Connection.is_connected():
             return
-        self.Connection = mysql.connector.connect(
-            host=self.Config.Host,
-            port=self.Config.Port,
-            user=self.Config.User,
-            password=self.Config.Password,
-            database=self.Config.Database,
-            charset="utf8mb4",
-            autocommit=True,
-            connect_timeout=5,
-        )
+        try:
+            self.Connection = mysql.connector.connect(
+                host=self.Config.Host,
+                port=self.Config.Port,
+                user=self.Config.User,
+                password=self.Config.Password,
+                database=self.Config.Database,
+                charset="utf8mb4",
+                autocommit=True,
+                connect_timeout=5,
+                use_pure=True,  # 使用纯 Python 实现，避免 C 扩展崩溃 (0xC0000005)
+            ) # type: ignore
+        except mysql.connector.Error:
+            raise
+        except Exception as e:
+            raise mysql.connector.Error(
+                f"连接数据库时发生未知错误: {e}"
+            ) from e
 
     def _ConnectWithoutDatabase(self) -> mysql.connector.MySQLConnection:
         """建立不指定数据库的连接，用于创建数据库。"""
-        return mysql.connector.connect(
-            host=self.Config.Host,
-            port=self.Config.Port,
-            user=self.Config.User,
-            password=self.Config.Password,
-            charset="utf8mb4",
-            autocommit=True,
-            connect_timeout=5,
-        )
+        try:
+            return mysql.connector.connect(
+                host=self.Config.Host,
+                port=self.Config.Port,
+                user=self.Config.User,
+                password=self.Config.Password,
+                charset="utf8mb4",
+                autocommit=True,
+                connect_timeout=5,
+                use_pure=True,  # 使用纯 Python 实现，避免 C 扩展崩溃 (0xC0000005)
+            ) # type: ignore
+        except mysql.connector.Error:
+            raise
+        except Exception as e:
+            raise mysql.connector.Error(
+                f"连接数据库时发生未知错误: {e}"
+            ) from e
 
     # ---- 数据库与表结构初始化 ----
 

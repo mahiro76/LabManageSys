@@ -4,7 +4,7 @@
 
 import sys
 import signal
-from mysql_service import start_mysql, stop_mysql, print_status, is_mysql_running
+from mysql_service import start_mysql, stop_mysql, print_status, is_mysql_running, initialize_mysql
 
 
 def cleanup():
@@ -29,7 +29,8 @@ def menu():
     print("1) 启动 MySQL")
     print("2) 停止 MySQL")
     print("3) 查看状态")
-    print("4) 退出（退出时自动停止 MySQL）")
+    print("4) 初始化数据目录（首次使用必选）")
+    print("5) 退出（退出时自动停止 MySQL）")
 
 
 def main():
@@ -60,6 +61,13 @@ def main():
             elif choice == "3":
                 print_status()
             elif choice == "4":
+                print("开始初始化 MySQL 数据目录...")
+                result = initialize_mysql(force=False)
+                if result:
+                    print("✓ 初始化成功！现在可以启动 MySQL 了")
+                else:
+                    print(" 初始化失败，请检查日志")
+            elif choice == "5":
                 print("退出程序，准备关闭 MySQL（如在运行）...")
                 break
             else:

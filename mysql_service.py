@@ -15,7 +15,7 @@ from typing import Any
 from config import (
     MYSQL_DATA, MYSQL_CONF, MYSQL_LOG, PID_FILE, STATE_FILE, MYSQL_PORT,
     NEW_ROOT_PASSWORD, sysInfo,
-    get_mysqld_path, get_mysql_path, get_mysqladmin_path,
+    get_mysqld_path, get_mysql_path, get_mysqladmin_path, MYSQL_HOME,
 )
 
 
@@ -115,13 +115,16 @@ def initialize_mysql(force: bool = False) -> bool:
     """初始化 MySQL 数据目录。"""
     state = load_state()
     if state.get("initialized") and not force:
-        print("[OK] 数据目录已初始化，跳过")
+        print("[INFO] 数据目录已初始化，跳过")
         return True
     print("[初始化] MySQL 数据目录...")
     mysqld = get_mysqld_path()
     if not os.path.exists(mysqld):
         print(f"[ERR] 找不到 mysqld: {mysqld}")
+        print(f"[ERR] 请确保 MySQL 已正确安装在 {MYSQL_HOME} 目录下")
         return False
+    if not os.path.exists(MYSQL_CONF):
+        print(f"[WARN] 未找到配置文件 {MYSQL_CONF}，将使用 MySQL 默认配置")
     if os.path.exists(MYSQL_DATA) and os.listdir(MYSQL_DATA):
         if not force:
             print(f"[ERR] 数据目录 {MYSQL_DATA} 非空，请先删除或使用 --force")
@@ -132,12 +135,44 @@ def initialize_mysql(force: bool = False) -> bool:
     cmd = [mysqld, "--initialize", "--console"]
     if os.path.exists(MYSQL_CONF):
         cmd.insert(1, f"--defaults-file={MYSQL_CONF}")
-    ret, stdout, stderr = run_command(cmd, capture_output=False)
-    time.sleep(2)
-    temp_pwd = get_temp_root_password()
+    print("[初始化] 正在执行 mysqld --initialize...")
+    print(f"  命令: {' '.join(cmd)}")
+    ret, stdout, stderr = run_command(cmd, capture_output=True)
+    time.sleep(3)
+    # 打印返回码
+    print(f"  mysqld 返回码: {ret}")
+    # 将初始化输出写入日志文件，供 get_temp_root_password 读取
+    log_dir = os.path.dirname(MYSQL_LOG)
+    if log_dir:
+        os.makedirs(log_dir, exist_ok=True)
+    with open(MYSQL_LOG, 'w', encoding='utf-8', errors='ignore') as f:
+        f.write(f"返回码: {ret}\n")
+        if stdout:
+            f.write("\n--- STDOUT ---\n" + stdout)
+        if stderr:
+            f.write("\n--- STDERR ---\n" + stderr)
+    # 验证数据目录是否已创建且非空
+    if not os.path.exists(MYSQL_DATA) or not os.listdir(MYSQL_DATA):
+        print(f"[ERR] 初始化失败：数据目录 {MYSQL_DATA} 为空或不存在")
+        if stderr:
+            print(f"  STDERR: {stderr[:1000]}")
+        if stdout:
+            print(f"  STDOUT: {stdout[:1000]}")
+        if ret != 0:
+            print(f"  mysqld 进程退出码: {ret}（非零表示执行出错）")
+        print("  可能的原因：")
+        print("    1. D:\\mysql 目录权限不足，请以管理员身份运行")
+        print("    2. my.ini 配置错误，请检查配置文件")
+        print("    3. MySQL 版本与系统不兼容")
+        print("    4. 磁盘空间不足")
+        print(f"  完整日志已写入: {MYSQL_LOG}")
+        return False
+    # 直接从输出中提取临时密码（优先于日志文件读取）
+    combined_output = (stdout or "") + "\n" + (stderr or "")
+    pwd_match = re.search(r"temporary password.*?:\s+(\S+)", combined_output, re.IGNORECASE)
+    temp_pwd = pwd_match.group(1) if pwd_match else get_temp_root_password()
     if temp_pwd:
-        print(f"[OK] MySQL 初始化完成，临时 root 密码已生成")
-        print(f"  临时密码: {temp_pwd}")
+        print(f"[INFO] MySQL 初始化完成，临时 root 密码已生成")
         state["temp_password"] = temp_pwd
     else:
         print("[WARN] 未找到临时密码，请检查日志文件")
@@ -151,7 +186,7 @@ def set_root_password(force: bool = False) -> bool:
     """修改 MySQL root 密码为 NEW_ROOT_PASSWORD。"""
     state = load_state()
     if state.get("password_set") and not force:
-        print("[OK] root 密码已修改，跳过")
+        print("[INFO] root 密码已修改，跳过")
         return True
     if not state.get("initialized"):
         print("[ERR] 数据目录未初始化，请先执行初始化")
@@ -170,12 +205,25 @@ def set_root_password(force: bool = False) -> bool:
         return False
     mysql_client = get_mysql_path()
     sql = f"ALTER USER 'root'@'localhost' IDENTIFIED BY '{NEW_ROOT_PASSWORD}'; FLUSH PRIVILEGES;"
+    # 必须用 shell=False 避免临时密码中的特殊字符被 cmd.exe 解释（如 % & 等）
     cmd = [mysql_client, "-u", "root", f"-p{temp_pwd}", "--connect-expired-password", "-e", sql]
-    ret, stdout, stderr = run_command(cmd, capture_output=True)
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True, text=True, timeout=30,
+            shell=False,
+        )
+        ret, stderr = result.returncode, result.stderr.strip()
+    except subprocess.TimeoutExpired:
+        print("[ERR] 修改 root 密码超时")
+        return False
+    except Exception as e:
+        print(f"[ERR] 修改 root 密码子进程异常: {e}")
+        return False
     if ret != 0:
         print(f"[ERR] 修改 root 密码失败: {stderr}")
         return False
-    print("[OK] root 密码修改成功")
+    print("[INFO] root 密码修改成功")
     state["password_set"] = True
     state.pop("temp_password", None)
     save_state(state)
@@ -186,17 +234,22 @@ def start_mysql(force: bool = False) -> bool:
     """启动 MySQL 服务。"""
     state = load_state()
     if is_mysql_running():
-        print("[OK] MySQL 已在运行")
+        print("[INFO] MySQL 已在运行")
         state["started"] = True
         save_state(state)
         return True
     if not state.get("initialized"):
-        print("[ERR] 数据目录未初始化，请先初始化")
+        print("[ERR] 数据目录未初始化，请先执行 'python mysql_daemon.py init' 或点击菜单中的「初始化数据目录」")
         return False
     print("[启动] MySQL 服务...")
     mysqld = get_mysqld_path()
     if not os.path.exists(mysqld):
         print(f"[ERR] 找不到 mysqld: {mysqld}")
+        return False
+    # 检查数据目录是否为空
+    if not os.path.exists(MYSQL_DATA) or not os.listdir(MYSQL_DATA):
+        print(f"[ERR] 数据目录为空或未初始化: {MYSQL_DATA}")
+        print(f"  请执行: python mysql_daemon.py init")
         return False
     cmd = [mysqld]
     if os.path.exists(MYSQL_CONF):
@@ -225,11 +278,22 @@ def start_mysql(force: bool = False) -> bool:
     with open(PID_FILE, 'w') as f:
         f.write(str(proc.pid))
     if wait_for_mysql_start():
-        print("[OK] MySQL 启动成功")
+        print("[INFO] MySQL 启动成功")
         state["started"] = True
         save_state(state)
         return True
+    # 启动失败，读取日志输出诊断信息
     print("[ERR] MySQL 启动超时，请检查日志:", MYSQL_LOG)
+    if os.path.exists(MYSQL_LOG):
+        try:
+            with open(MYSQL_LOG, 'r', encoding='utf-8', errors='ignore') as f:
+                last_lines = f.readlines()[-20:]  # 最后20行
+                print("\n=== 最近日志 ===")
+                for line in last_lines:
+                    print(line.strip())
+                print("================\n")
+        except Exception:
+            pass
     return False
 
 
@@ -249,7 +313,7 @@ def stop_mysql() -> bool:
     state = load_state()
     state["started"] = False
     save_state(state)
-    print("[OK] MySQL 已停止")
+    print("[INFO] MySQL 已停止")
     return True
 
 
@@ -257,7 +321,7 @@ def configure_mysql(force: bool = False) -> bool:
     """创建额外数据库和用户。"""
     state = load_state()
     if state.get("configured") and not force:
-        print("[OK] 额外配置已完成，跳过")
+        print("[INFO] 额外配置已完成，跳过")
         return True
     if not state.get("password_set"):
         print("[ERR] root 密码未设置，无法进行额外配置")
@@ -277,7 +341,7 @@ def configure_mysql(force: bool = False) -> bool:
     if ret != 0:
         print(f"[ERR] 额外配置失败: {stderr}")
         return False
-    print("[OK] 额外配置完成（创建数据库 myapp 和用户 myuser）")
+    print("[INFO] 额外配置完成（创建数据库 myapp 和用户 myuser）")
     state["configured"] = True
     save_state(state)
     return True
