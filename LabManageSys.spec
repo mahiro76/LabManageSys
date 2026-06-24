@@ -1,4 +1,4 @@
-s# -*- mode: python ; coding: utf-8 -*-
+# -*- mode: python ; coding: utf-8 -*-
 
 """
 实验室考勤管理系统 PyInstaller 打包配置
@@ -56,6 +56,7 @@ a = Analysis(
     excludes=[
         # 排除不必要的测试和开发模块以减小体积
         'pytest',
+        'unittest',
         'pdb',
         'idlelib',
     ],
@@ -76,8 +77,8 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=False,  # 禁用 UPX，避免压缩导致 DLL 损坏
-    console=False,  # 不显示控制台窗口（用户端静默运行）
+    upx=False,
+    console=False,  # 不显示控制台窗口
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
@@ -92,7 +93,7 @@ coll = COLLECT(
     a.zipfiles,
     a.datas,
     strip=False,
-    upx=False,  # 禁用 UPX，避免压缩导致 DLL 损坏
+    upx=True,
     upx_exclude=[],
     name='LabManageSys',
 )
